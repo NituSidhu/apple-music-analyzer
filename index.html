@@ -714,7 +714,7 @@
             <div class="upload-box" id="uploadBox">
                 <input type="file" id="fileInput" accept=".csv">
                 <div class="upload-icon">📁</div>
-                <div class="upload-title">Drop your Apple Music export here</div>
+                <div class="upload-title">Drop your Daily Tracks CSV here</div>
                 <div class="upload-hint">or click to browse for the file</div>
                 <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
                     Select CSV File
@@ -729,7 +729,7 @@
                     <li>Select "Apple Media Services activity" and submit</li>
                     <li>Wait for Apple's email (usually 2-7 days)</li>
                     <li>Download and unzip the file</li>
-                    <li>Upload <code>Apple Music Play Activity.csv</code> here</li>
+                    <li>Upload <code>Apple Music - Play History Daily Tracks.csv</code> here</li>
                 </ol>
             </div>
         </div>
@@ -953,14 +953,25 @@
             const lines = csvText.split('\n');
             const headers = parseCSVLine(lines[0]);
 
-            // Find column indices
-            const artistCol = headers.findIndex(h => h.toLowerCase().includes('artist name'));
-            const songCol = headers.findIndex(h => h.toLowerCase().includes('song name') || h.toLowerCase().includes('content name'));
-            const durationCol = headers.findIndex(h => h.toLowerCase().includes('play duration milliseconds'));
-            const dateCol = headers.findIndex(h => h.toLowerCase().includes('event start timestamp') || h.toLowerCase().includes('date played'));
+            // Detect file format
+            const trackDescCol = headers.findIndex(h => h.toLowerCase() === 'track description');
+            const isDailyTracksFormat = trackDescCol !== -1;
 
-            if (artistCol === -1 || durationCol === -1) {
-                alert('Could not find required columns. Please ensure this is an Apple Music Play Activity CSV.');
+            let durationCol, dateCol;
+
+            if (isDailyTracksFormat) {
+                // Daily Tracks format: "Track Description" has "Artist - Song"
+                durationCol = headers.findIndex(h => h.toLowerCase().includes('play duration milliseconds'));
+                dateCol = headers.findIndex(h => h.toLowerCase() === 'date played');
+            } else {
+                // Play Activity format - but this doesn't have artist data reliably
+                alert('Please upload the "Apple Music - Play History Daily Tracks.csv" file instead.\n\nThe Play Activity file doesn\'t include artist names in a usable format.');
+                location.reload();
+                return;
+            }
+
+            if (durationCol === -1) {
+                alert('Could not find required columns. Please ensure this is an Apple Music CSV export.');
                 location.reload();
                 return;
             }
@@ -989,16 +1000,25 @@
                 }
 
                 const cols = parseCSVLine(lines[i]);
-                if (cols.length < Math.max(artistCol, songCol, durationCol, dateCol) + 1) continue;
+                if (cols.length < Math.max(trackDescCol, durationCol, dateCol) + 1) continue;
 
-                const artist = cols[artistCol]?.trim();
-                const song = cols[songCol]?.trim();
+                // Parse "Artist - Song" from Track Description
+                const trackDesc = cols[trackDescCol]?.trim() || '';
+                const dashIndex = trackDesc.indexOf(' - ');
+                if (dashIndex === -1) continue;
+
+                const artist = trackDesc.substring(0, dashIndex).trim();
+                const song = trackDesc.substring(dashIndex + 3).trim();
                 const duration = parseInt(cols[durationCol]) || 0;
                 const dateStr = cols[dateCol]?.trim();
 
                 if (!artist || duration <= 0) continue;
 
-                const year = dateStr ? new Date(dateStr).getFullYear() : null;
+                // Parse date (format: YYYYMMDD for Daily Tracks)
+                let year = null;
+                if (dateStr && dateStr.length >= 4) {
+                    year = parseInt(dateStr.substring(0, 4));
+                }
                 if (year && (year < 2010 || year > 2030)) continue;
 
                 totalPlays++;
